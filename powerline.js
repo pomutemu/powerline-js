@@ -3,34 +3,32 @@
 // Powerline-style prompt in js instead of python.
 // 100% inspired by https://github.com/milkbikis/powerline-bash
 
-var
-	child = require('child_process');
-
-
-// echo "⮀ ± ⭠ ➦ ✔ ✘ ⚡"
+var child = require('child_process');
 
 var COLOR =
 {
-	PATH_BG: 237,  // dark grey
-	PATH_FG: 250,  // light grey
-	CWD_FG: 254, // nearly-white grey
-	SEPARATOR_FG: 244,
+	PATH_BG: [4, 237],
+	PATH_FG: [0, 250],
+	CWD_FG: [0, 254],
+	SEPARATOR_FG: [0, 244],
 
-	REPO_CLEAN_BG: 148, // a light green color
-	REPO_CLEAN_FG: 0,  // black
-	REPO_DIRTY_BG: 161, // pink/red
-	REPO_DIRTY_FG: 15, // white
+	REPO_CLEAN_BG: [2, 148],
+	REPO_CLEAN_FG: [0, 0],
+	REPO_HAS_PENDING_BG: [3, 161],
+	REPO_HAS_PENDING_FG: [0, 15],
+	REPO_HAS_UNSTAGED_BG: [1, 161],
+	REPO_HAS_UNSTAGED_FG: [0, 15],
 
-	CMD_PASSED_BG: 236,
-	CMD_PASSED_FG: 15,
-	CMD_FAILED_BG: 161,
-	CMD_FAILED_FG: 15,
+	CMD_PASSED_BG: [7, 236],
+	CMD_PASSED_FG: [0, 15],
+	CMD_FAILED_BG: [7, 161],
+	CMD_FAILED_FG: [0, 15],
 
-	SVN_CHANGES_BG: 148,
-	SVN_CHANGES_FG: 22, // dark green
+	SVN_CHANGES_BG: [7, 148],
+	SVN_CHANGES_FG: [0, 22],
 
-	VIRTUAL_ENV_BG: 35, // a mid-tone green
-	VIRTUAL_ENV_FG: 22
+	VIRTUAL_ENV_BG: [7, 35],
+	VIRTUAL_ENV_FG: [0, 22]
 };
 
 var SYMBOLS =
@@ -42,8 +40,8 @@ var SYMBOLS =
 	},
 	'patched':
 	{
-		separator: '\u2B80',
-		separator_thin: '\u2B81'
+		separator: '\ue0b0',
+		separator_thin: '\ue0b1'
 	}
 };
 
@@ -68,7 +66,12 @@ function Shell(which)
 
 Shell.prototype.color = function(prefix, code)
 {
-	return this.colorTemplate('[' + prefix + ';5;' + code + 'm');
+	if (options.color === 'dos')
+		var template = '[' + prefix[0] + code[0] + 'm';
+	else if (options.color === 'ansi')
+		var template = '[' + prefix + ';5;' + code[1] + 'm';
+
+	return this.colorTemplate(template);
 };
 
 Shell.prototype.fgcolor = function(code)
@@ -88,11 +91,12 @@ function Powerline(options)
 	options = options || {};
 	this.options = {};
 	this.options.shell = options.shell || 'zsh';
+	this.options.color = options.color || 'ansi';
 	this.options.mode = options.mode || 'patched';
-	this.options.depth = options.depth || 5;
+	this.options.depth = options.depth || 3;
 	this.options.showRepo = options.hasOwnProperty('showRepo') ? options.showRepo : true;
 	this.options.showPath = options.hasOwnProperty('showPath') ? options.showPath : true;
-	this.options.cwdOnly = options.cwdOnly || false;
+	this.options.showRoot = options.hasOwnProperty('showRoot') ? options.showRoot : true;
 
 	this.shell = new Shell(this.options.shell);
 
@@ -100,8 +104,9 @@ function Powerline(options)
 	this.separator_thin = SYMBOLS[this.options.mode].separator_thin;
 
 	this.segments = [];
-	this.cwd = process.env.PWD || process.cwd();
-	this.isRoot = process.getuid() === 0;
+	this.cwd = process.platform === 'win32' ? process.cwd().replace(/\\/g, '/') : process.cwd();
+	this.home = process.platform === 'win32' ? process.env.HOME.replace(/\\/g, '/') : process.env.HOME;
+	this.isRoot = process.platform !== 'win32' && process.getuid() === 0;
 	this.error = options.hasOwnProperty('error') ? options.error : false;
 }
 
@@ -155,8 +160,8 @@ Powerline.prototype.addCWDSegment = function()
 	if (!this.options.showPath)
 		return;
 
-	var home = process.env.HOME;
 	var cwd = this.cwd;
+	var home = this.home;
 
 	if (cwd.indexOf(home) === 0)
 		cwd = cwd.replace(home, '~');
@@ -165,7 +170,7 @@ Powerline.prototype.addCWDSegment = function()
 		cwd = cwd.substring(1, cwd.length);
 
 	var names = cwd.split('/');
-	if (!this.options.cwdOnly && (this.options.depth > 1))
+	if (this.options.depth > 1)
 	{
 		if (names.length > this.options.depth)
 		{
@@ -197,6 +202,9 @@ Powerline.prototype.addCWDSegment = function()
 
 Powerline.prototype.addRootIndicator = function()
 {
+	if (!this.options.showRoot)
+		return;
+
 	var bg = this.error ? COLOR.CMD_FAILED_BG : COLOR.CMD_PASSED_BG;
 	var fg = this.error ? COLOR.CMD_FAILED_FG : COLOR.CMD_PASSED_FG;
 
@@ -237,11 +245,7 @@ Powerline.prototype.addRepoSegment = function(callback)
 	self.addGitSegment(function(found)
 	{
 		if (found) return callback();
-		self.addSVNSegment(function(found)
-		{
-			if (found) return callback();
-			self.addHGSegment(callback);
-		});
+		self.addSVNSegment(callback);
 	});
 };
 
@@ -250,10 +254,10 @@ Powerline.prototype.addGitSegment = function(callback)
 	var self = this;
 
 	var hasPending = false;
-	var hasUntracked = false;
+	var hasUnstaged = false;
 	var branch;
 
-	child.exec('git status -sb --ignore-submodules', function(err, stdout, stderr)
+	child.exec('git status -sb --ignore-submodules --porcelain', function(err, stdout, stderr)
 	{
 		if (err || !stdout)
 			return callback(false);
@@ -269,28 +273,38 @@ Powerline.prototype.addGitSegment = function(callback)
 
 		matches = status.match(/ahead\s+(\d+)/);
 		if (matches)
-			branch += ' \u21E1' + matches[1];
+			branch += '+' + matches[1] + ' ';
 
 		matches = status.match(/behind\s+(\d+)/);
 		if (matches)
-			branch += ' \u21E3' + matches[1];
+			branch += '-' + matches[1] + ' ';
 
 		for (var i = 0; i < lines.length; i++)
 		{
-			if ((lines[i][1] === 'M') || (lines[i][0] === 'M'))
+			if (lines[i][0] !== ' ')
 				hasPending = true;
-			else if (lines[i][0] === '?')
-				hasUntracked = true;
+			if (lines[i][1] !== ' ')
+				hasUnstaged = true;
 
-			if (hasUntracked && hasPending)
+			if (hasPending && hasUnstaged)
 				break;
 		}
 
-		if (hasUntracked)
-			branch += ' +';
-
-		var fg = hasPending ? COLOR.REPO_DIRTY_FG : COLOR.REPO_CLEAN_FG;
-		var bg = hasPending ? COLOR.REPO_DIRTY_BG : COLOR.REPO_CLEAN_BG;
+		if (hasUnstaged)
+		{
+			 var fg = COLOR.REPO_HAS_UNSTAGED_FG;
+			 var bg = COLOR.REPO_HAS_UNSTAGED_BG;
+		}
+		else if (hasPending)
+		{
+			 var fg = COLOR.REPO_HAS_PENDING_FG;
+			 var bg = COLOR.REPO_HAS_PENDING_BG;
+		}
+		else
+		{
+			 var fg = COLOR.REPO_HAS_CLEAN_FG;
+			 var bg = COLOR.REPO_HAS_CLEAN_BG;
+		}
 
 		self.segments.push(new Segment(self, ' ' + branch, fg, bg));
 		callback(true);
@@ -322,12 +336,6 @@ Powerline.prototype.addSVNSegment = function(callback)
 		}
 		callback(true);
 	});
-};
-
-Powerline.prototype.addHGSegment = function(callback)
-{
-	// TODO
-	callback(false);
 };
 
 //---------------------------------------------------
@@ -375,14 +383,12 @@ function parseOptions(args)
 		var opt = args.shift();
 		switch (opt)
 		{
-			case '--cwd-only':
-				options.showRepo = false;
-				options.showPath = true;
-				options.cwdOnly = true;
-				break;
-
 			case '--shell':
 				options.shell = args.shift();
+				break;
+
+			case '--color':
+				options.color = args.shift();
 				break;
 
 			case '--mode':
@@ -396,10 +402,15 @@ function parseOptions(args)
 			case '--repo-only':
 				options.showRepo = true;
 				options.showPath = false;
+				options.showRoot = false;
 				break;
 
 			case '--no-repo':
 				options.showRepo = false;
+				break;
+
+			case '--no-root':
+				options.showRoot = false;
 				break;
 
 			default:
@@ -423,4 +434,3 @@ if (require.main === module)
 exports.Powerline = Powerline;
 exports.Segment = Segment;
 exports.parseOptions = parseOptions;
-

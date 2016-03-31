@@ -1,8 +1,8 @@
 {
-  "name": "powerline",
-  "description": "a powerline-style shell prompt builder",
-  "version": "0.0.2",
-  "author": "C J Silverio <ceejceej@gmail.com>",
+  "name": "powerline-js",
+  "description": "A shell prompt builder just like Powerline in JavaScript",
+  "version": "0.1.0",
+  "author": "pomutemu",
   "bin": {
     "powerline": "./powerline.js"
   },
@@ -22,7 +22,7 @@
   "main": "powerline.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/ceejbot/powerline-js.git"
+    "url": "pomutemu/powerline-js"
   },
   "scripts": {
     "test": "mocha  -R spec test/*.js"

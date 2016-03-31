@@ -38,8 +38,8 @@ precmd_functions=(powerline_precmd)
 `--shell [zsh|bash]`  
 : which shell to emit color escapes for; defaults to `'zsh'`
 
-`--cwd-only`  
-: use only the current working directory in the prompt; defaults to `false`
+`--color [ansi|dos]`  
+: which color escape codes; defaults to `'ansi'`
 
 `--mode [patched|compatible]`  
 : which font mode to expect; defaults to `'patched'`
@@ -49,6 +49,9 @@ precmd_functions=(powerline_precmd)
 
 `--no-repo`  
 : do not attempt to show extra source repository information for the current directory; defaults to `false`
+
+`--no-root`  
+: do not attempt to show a root indicator; defaults to `false`
 
 `--repo-only`  
 : generate *only* a source repository segment; defaults to `false`
@@ -68,12 +71,6 @@ var COLOR_TEMPLATES =
 	'zsh': function(s) { return '%{' + s + '%}'; }
 };
 ```
-
-## TODO
-
-* An option to reverse the prompt direction, for use in zsh right prompts.
-* Mercurial support.
-* Optional timestamp segment.
 
 ## License
 
